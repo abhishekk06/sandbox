@@ -35,6 +35,7 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.google.ar.core.*
 import kotlinx.android.synthetic.main.activity_camera.*
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
@@ -67,13 +68,17 @@ class CameraActivity : AppCompatActivity() {
     private var pauseAnalysis = false
     private var imageRotationDegrees: Int = 0
     private val tfImageBuffer = TensorImage(DataType.UINT8)
+    private lateinit var session: Session
+    private var placementIsDone = false;
+    var placed = false
+
 
     private val tfImageProcessor by lazy {
         val cropSize = minOf(bitmapBuffer.width, bitmapBuffer.height)
         ImageProcessor.Builder()
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
             .add(ResizeOp(
-                tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
+                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
             .add(Rot90Op(imageRotationDegrees / 90))
             .add(NormalizeOp(0f, 1f))
             .build()
@@ -81,8 +86,8 @@ class CameraActivity : AppCompatActivity() {
 
     private val tflite by lazy {
         Interpreter(
-            FileUtil.loadMappedFile(this, MODEL_PATH),
-            Interpreter.Options().addDelegate(NnApiDelegate()))
+                FileUtil.loadMappedFile(this, MODEL_PATH),
+                Interpreter.Options().addDelegate(NnApiDelegate()))
     }
 
     private val detector by lazy {
@@ -99,6 +104,7 @@ class CameraActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_camera)
         container = findViewById(R.id.camera_container)
+        createSession()
 
         // Listener for button used to capture photo
         camera_capture_button.setOnClickListener {
@@ -119,7 +125,7 @@ class CameraActivity : AppCompatActivity() {
                     if (isFrontFacing) postScale(-1f, 1f)
                 }
                 val uprightImage = Bitmap.createBitmap(
-                    bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true)
+                        bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true)
                 image_predicted.setImageBitmap(uprightImage)
                 image_predicted.visibility = View.VISIBLE
             }
@@ -141,16 +147,16 @@ class CameraActivity : AppCompatActivity() {
 
             // Set up the view finder use case to display camera preview
             val preview = Preview.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                .setTargetRotation(view_finder.display.rotation)
-                .build()
+                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                    .setTargetRotation(view_finder.display.rotation)
+                    .build()
 
             // Set up the image analysis use case which will process frames in real time
             val imageAnalysis = ImageAnalysis.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                .setTargetRotation(view_finder.display.rotation)
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
+                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                    .setTargetRotation(view_finder.display.rotation)
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
 
             var frameCounter = 0
             var lastFpsTimestamp = System.currentTimeMillis()
@@ -162,7 +168,7 @@ class CameraActivity : AppCompatActivity() {
                     // the analyzer has started running
                     imageRotationDegrees = image.imageInfo.rotationDegrees
                     bitmapBuffer = Bitmap.createBitmap(
-                        image.width, image.height, Bitmap.Config.ARGB_8888)
+                            image.width, image.height, Bitmap.Config.ARGB_8888)
                 }
 
                 // Early exit: image analysis is in paused state
@@ -175,7 +181,7 @@ class CameraActivity : AppCompatActivity() {
                 image.use { converter.yuvToRgb(image.image!!, bitmapBuffer) }
 
                 // Process the image in Tensorflow
-                val tfImage =  tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
+                val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
 
                 // Perform the object detection for the current frame
                 val predictions = detector.predict(tfImage)
@@ -201,7 +207,7 @@ class CameraActivity : AppCompatActivity() {
             // Apply declared configs to CameraX using the same lifecycle owner
             cameraProvider.unbindAll()
             val camera = cameraProvider.bindToLifecycle(
-                this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
+                    this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
 
             // Use the camera object to link our preview use case with the view
             preview.setSurfaceProvider(view_finder.createSurfaceProvider(camera.cameraInfo))
@@ -210,7 +216,7 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun reportPrediction(
-        prediction: ObjectDetectionHelper.ObjectPrediction?
+            prediction: ObjectDetectionHelper.ObjectPrediction?
     ) = view_finder.post {
 
         // Early exit: if prediction is not good enough, don't report it
@@ -222,6 +228,11 @@ class CameraActivity : AppCompatActivity() {
 
         // Location has to be mapped to our local coordinates
         val location = mapOutputCoordinates(prediction.location)
+
+        session.resume()
+        onDrawFrame()
+
+        //arFragment.getArSceneView().getScene().addOnUpdateListener(this::onUpdateFrame);
 
         // Update the text and UI
         text_prediction.text = "${"%.2f".format(prediction.score)} ${prediction.label}"
@@ -237,6 +248,26 @@ class CameraActivity : AppCompatActivity() {
         text_prediction.visibility = View.VISIBLE
     }
 
+    /*private fun onUpdateFrame(frameTime: FrameTime) {
+        val frame: Frame = arFragment.getArSceneView().getArFrame() ?: return
+
+        // If there is no frame, just return.
+
+        //Making sure ARCore is tracking some feature points, makes the augmentation little stable.
+        if (frame.getCamera().getTrackingState() === TrackingState.TRACKING && !placed) {
+            val pos: Pose = frame.getCamera().getPose().compose(Pose.makeTranslation(0f, 0f, -0.3f))
+            val anchor: Anchor = arFragment.getArSceneView().getSession().createAnchor(pos)
+            val anchorNode = AnchorNode(anchor)
+            anchorNode.setParent(arFragment.getArSceneView().getScene())
+
+            // Create the arrow node and add it to the anchor.
+            val arrow = Node()
+            arrow.setParent(anchorNode)
+            arrow.setRenderable(arrowRenderable)
+            placed = true //to place the arrow just once.
+        }
+
+    }*/
     /**
      * Helper function used to map the coordinates for objects coming out of
      * the model into the coordinates that the user sees on the screen.
@@ -245,10 +276,10 @@ class CameraActivity : AppCompatActivity() {
 
         // Step 1: map location to the preview coordinates
         val previewLocation = RectF(
-            location.left * view_finder.width,
-            location.top * view_finder.height,
-            location.right * view_finder.width,
-            location.bottom * view_finder.height
+                location.left * view_finder.width,
+                location.top * view_finder.height,
+                location.right * view_finder.width,
+                location.bottom * view_finder.height
         )
 
         // Step 2: compensate for camera sensor orientation and mirroring
@@ -258,10 +289,10 @@ class CameraActivity : AppCompatActivity() {
             (!isFrontFacing && isFlippedOrientation) ||
             (isFrontFacing && !isFlippedOrientation)) {
             RectF(
-                view_finder.width - previewLocation.right,
-                view_finder.height - previewLocation.bottom,
-                view_finder.width - previewLocation.left,
-                view_finder.height - previewLocation.top
+                    view_finder.width - previewLocation.right,
+                    view_finder.height - previewLocation.bottom,
+                    view_finder.width - previewLocation.left,
+                    view_finder.height - previewLocation.top
             )
         } else {
             previewLocation
@@ -274,17 +305,17 @@ class CameraActivity : AppCompatActivity() {
         val midY = (rotatedLocation.top + rotatedLocation.bottom) / 2f
         return if (view_finder.width < view_finder.height) {
             RectF(
-                midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                midY - (1f - margin) * rotatedLocation.height() / 2f,
-                midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                midY + (1f - margin) * rotatedLocation.height() / 2f
+                    midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                    midY - (1f - margin) * rotatedLocation.height() / 2f,
+                    midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                    midY + (1f - margin) * rotatedLocation.height() / 2f
             )
         } else {
             RectF(
-                midX - (1f - margin) * rotatedLocation.width() / 2f,
-                midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
-                midX + (1f - margin) * rotatedLocation.width() / 2f,
-                midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
+                    midX - (1f - margin) * rotatedLocation.width() / 2f,
+                    midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
+                    midX + (1f - margin) * rotatedLocation.width() / 2f,
+                    midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
             )
         }
     }
@@ -295,16 +326,20 @@ class CameraActivity : AppCompatActivity() {
         // Request permissions each time the app resumes, since they can be revoked at any time
         if (!hasPermissions(this)) {
             ActivityCompat.requestPermissions(
-                this, permissions.toTypedArray(), permissionsRequestCode)
+                    this, permissions.toTypedArray(), permissionsRequestCode)
         } else {
             bindCameraUseCases()
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+    }
+
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
+            requestCode: Int,
+            permissions: Array<out String>,
+            grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionsRequestCode && hasPermissions(this)) {
@@ -326,4 +361,47 @@ class CameraActivity : AppCompatActivity() {
         private const val MODEL_PATH = "coco_ssd_mobilenet_v1_1.0_quant.tflite"
         private const val LABELS_PATH = "coco_ssd_mobilenet_v1_1.0_labels.txt"
     }
+
+    // Create the ARCore session.
+    fun createSession() {
+        session = Session(applicationContext);
+        val config = Config(session)
+        // Set the Instant Placement mode.
+        config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
+        session.configure(config)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        session.close()
+    }
+
+    fun onDrawFrame() {
+
+        val frame = session.update();
+
+        // Place an object on tap.
+        if (!placementIsDone /*&& didUserTap()*/) {
+            // Use estimated distance from the user's device to the real world, based
+            // on expected user interaction and behavior.
+            val approximateDistanceMeters = 2.0f;
+            // Performs a ray cast given a screen tap position.
+            val results = frame.hitTestInstantPlacement(0F, 0F, approximateDistanceMeters)
+            if (results.isNotEmpty()) {
+                val point = results[0].trackable as InstantPlacementPoint
+                // Create an Anchor from the point's pose.
+                val anchor = point.createAnchor(point.pose)
+                placementIsDone = true
+                disableInstantPlacement()
+            }
+        }
+    }
+
+    fun disableInstantPlacement() {
+        val config = Config(session)
+        // Set the Instant Placement mode.
+        config.instantPlacementMode = Config.InstantPlacementMode.DISABLED
+        session.configure(config)
+    }
 }
+

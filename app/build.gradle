@@ -24,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId 'com.android.example.camerax.tflite'
-        minSdkVersion 21
+        minSdkVersion 24
         targetSdkVersion 29
         versionCode 1
         versionName "0.0.1"
@@ -69,4 +69,7 @@ dependencies {
 
     testImplementation 'org.robolectric:robolectric:4.3.1'
     testImplementation 'junit:junit:4.13'
+
+    //ARCore
+    implementation 'com.google.ar:core:1.23.0'
 }

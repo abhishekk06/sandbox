@@ -23,6 +23,9 @@
 
     <!-- Declare permissions -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Limits app visibility in the Google Play Store to ARCore supported devices
+     (https://developers.google.com/ar/discover/supported-devices). -->
+    <uses-feature android:name="android.hardware.camera.ar" />
 
     <application
         android:allowBackup="true"
@@ -42,6 +45,10 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- "AR Required" app, requires "Google Play Services for AR" (ARCore)
+         to be installed, as the app does not include any non-AR features. -->
+        <meta-data android:name="com.google.ar.core" android:value="required" />
 
     </application>
 
