@@ -229,10 +229,7 @@ class CameraActivity : AppCompatActivity() {
         // Location has to be mapped to our local coordinates
         val location = mapOutputCoordinates(prediction.location)
 
-        session.resume()
         onDrawFrame()
-
-        //arFragment.getArSceneView().getScene().addOnUpdateListener(this::onUpdateFrame);
 
         // Update the text and UI
         text_prediction.text = "${"%.2f".format(prediction.score)} ${prediction.label}"
@@ -248,26 +245,6 @@ class CameraActivity : AppCompatActivity() {
         text_prediction.visibility = View.VISIBLE
     }
 
-    /*private fun onUpdateFrame(frameTime: FrameTime) {
-        val frame: Frame = arFragment.getArSceneView().getArFrame() ?: return
-
-        // If there is no frame, just return.
-
-        //Making sure ARCore is tracking some feature points, makes the augmentation little stable.
-        if (frame.getCamera().getTrackingState() === TrackingState.TRACKING && !placed) {
-            val pos: Pose = frame.getCamera().getPose().compose(Pose.makeTranslation(0f, 0f, -0.3f))
-            val anchor: Anchor = arFragment.getArSceneView().getSession().createAnchor(pos)
-            val anchorNode = AnchorNode(anchor)
-            anchorNode.setParent(arFragment.getArSceneView().getScene())
-
-            // Create the arrow node and add it to the anchor.
-            val arrow = Node()
-            arrow.setParent(anchorNode)
-            arrow.setRenderable(arrowRenderable)
-            placed = true //to place the arrow just once.
-        }
-
-    }*/
     /**
      * Helper function used to map the coordinates for objects coming out of
      * the model into the coordinates that the user sees on the screen.
@@ -323,6 +300,7 @@ class CameraActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
 
+
         // Request permissions each time the app resumes, since they can be revoked at any time
         if (!hasPermissions(this)) {
             ActivityCompat.requestPermissions(
@@ -330,10 +308,17 @@ class CameraActivity : AppCompatActivity() {
         } else {
             bindCameraUseCases()
         }
+        session.resume()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        session.resume()
     }
 
     override fun onPause() {
         super.onPause()
+        session.pause()
     }
 
     override fun onRequestPermissionsResult(
