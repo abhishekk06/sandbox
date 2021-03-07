@@ -18,16 +18,26 @@ package com.android.example.camerax.tflite
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.RectF
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.util.Size
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -47,6 +57,7 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
+import java.util.*
 import java.util.concurrent.Executors
 import kotlin.math.min
 import kotlin.random.Random
@@ -71,14 +82,28 @@ class CameraActivity : AppCompatActivity() {
     private lateinit var session: Session
     private var placementIsDone = false;
     var placed = false
+    //Text To Speech
+    lateinit var mTTS: TextToSpeech
+    var object_name = " "
+
+    enum class JobType(val job: Int) {
+        INIT(0),
+        SEARCHING_OBJECT(1),
+        OBJECT_NOT_FOUND(2),
+    }
+
+    var JobStatus = JobType.INIT
 
 
     private val tfImageProcessor by lazy {
         val cropSize = minOf(bitmapBuffer.width, bitmapBuffer.height)
         ImageProcessor.Builder()
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
-            .add(ResizeOp(
-                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
+            .add(
+                ResizeOp(
+                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR
+                )
+            )
             .add(Rot90Op(imageRotationDegrees / 90))
             .add(NormalizeOp(0f, 1f))
             .build()
@@ -86,8 +111,9 @@ class CameraActivity : AppCompatActivity() {
 
     private val tflite by lazy {
         Interpreter(
-                FileUtil.loadMappedFile(this, MODEL_PATH),
-                Interpreter.Options().addDelegate(NnApiDelegate()))
+            FileUtil.loadMappedFile(this, MODEL_PATH),
+            Interpreter.Options().addDelegate(NnApiDelegate())
+        )
     }
 
     private val detector by lazy {
@@ -99,18 +125,95 @@ class CameraActivity : AppCompatActivity() {
         val inputShape = tflite.getInputTensor(inputIndex).shape()
         Size(inputShape[2], inputShape[1]) // Order of axis is: {1, height, width, 3}
     }
+    val speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+    val speechRecognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+
+    private fun startSpeechToText() {
+
+        speechRecognizerIntent.putExtra(
+            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+        )
+        speechRecognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+
+        speechRecognizer.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(bundle: Bundle) {}
+
+            override fun onBeginningOfSpeech() {}
+
+            override fun onRmsChanged(v: Float) {}
+
+            override fun onBufferReceived(bytes: ByteArray) {}
+
+            override fun onEndOfSpeech() {}
+
+            override fun onError(i: Int) {}
+
+            override fun onResults(bundle: Bundle) {
+                val matches =
+                    bundle.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)//getting all the matches
+                //displaying the first match
+                if (matches != null) {
+                    object_name = matches[0]
+                }
+                mTTS.speak("Ok. Looking for "+object_name, TextToSpeech.QUEUE_ADD, null)
+                JobStatus = JobType.SEARCHING_OBJECT
+            }
+
+            override fun onPartialResults(bundle: Bundle) {}
+
+            override fun onEvent(i: Int, bundle: Bundle) {}
+        })
+    }
+
+    private fun checkPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + packageName))
+                startActivity(intent)
+                finish()
+                Toast.makeText(this, "Enable Microphone Permission..!!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_camera)
         container = findViewById(R.id.camera_container)
-        createSession()
+
+        mTTS = TextToSpeech(applicationContext, TextToSpeech.OnInitListener { status ->
+            if (status != TextToSpeech.ERROR) {
+                //if there is no error then set language
+                mTTS.language = Locale.US
+            }
+        })
+
+        startSpeechToText()
+        checkPermission()
 
         // Listener for button used to capture photo
         camera_capture_button.setOnClickListener {
 
+            mTTS.speak("Hello! What object to search for ?", TextToSpeech.QUEUE_ADD, null)
+            Thread.sleep(1_500 )
+            speechRecognizer.startListening(speechRecognizerIntent)
+            Thread.sleep(2_500)
+            speechRecognizer.stopListening()
+            // Re-enable camera controls
+            it.isEnabled = true
+            if (pauseAnalysis) {
+                // If image analysis is in paused state, resume it
+                pauseAnalysis = false
+                image_predicted.visibility = View.GONE
+
+            }
+            //JobStatus = JobType.SEARCHING_OBJECT
+
+            //mTTS.speak(object_name, TextToSpeech.QUEUE_ADD, null)
+
             // Disable all camera controls
-            it.isEnabled = false
+           /* it.isEnabled = false
 
             if (pauseAnalysis) {
                 // If image analysis is in paused state, resume it
@@ -125,15 +228,25 @@ class CameraActivity : AppCompatActivity() {
                     if (isFrontFacing) postScale(-1f, 1f)
                 }
                 val uprightImage = Bitmap.createBitmap(
-                        bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true)
+                    bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
+                )
                 image_predicted.setImageBitmap(uprightImage)
                 image_predicted.visibility = View.VISIBLE
             }
 
             // Re-enable camera controls
             it.isEnabled = true
+
+            mTTS.speak("Connecting to person to help further", TextToSpeech.QUEUE_ADD, null)
+            val uri: Uri =
+                Uri.parse("https://msngr.com/rtjydvbegvlc?funnel_session_id=_3b8d521f-af4c-4a57-896c-95cff5e1726d") // missing 'http://' will cause crashed
+
+            val url_intent = Intent(Intent.ACTION_VIEW, uri)
+            startActivity(url_intent)
+            */
         }
     }
+
 
     /** Declare and bind preview and analysis use cases */
     @SuppressLint("UnsafeExperimentalUsageError")
@@ -147,16 +260,16 @@ class CameraActivity : AppCompatActivity() {
 
             // Set up the view finder use case to display camera preview
             val preview = Preview.Builder()
-                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setTargetRotation(view_finder.display.rotation)
-                    .build()
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                .setTargetRotation(view_finder.display.rotation)
+                .build()
 
             // Set up the image analysis use case which will process frames in real time
             val imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setTargetRotation(view_finder.display.rotation)
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                .setTargetRotation(view_finder.display.rotation)
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
 
             var frameCounter = 0
             var lastFpsTimestamp = System.currentTimeMillis()
@@ -168,7 +281,8 @@ class CameraActivity : AppCompatActivity() {
                     // the analyzer has started running
                     imageRotationDegrees = image.imageInfo.rotationDegrees
                     bitmapBuffer = Bitmap.createBitmap(
-                            image.width, image.height, Bitmap.Config.ARGB_8888)
+                        image.width, image.height, Bitmap.Config.ARGB_8888
+                    )
                 }
 
                 // Early exit: image analysis is in paused state
@@ -207,7 +321,8 @@ class CameraActivity : AppCompatActivity() {
             // Apply declared configs to CameraX using the same lifecycle owner
             cameraProvider.unbindAll()
             val camera = cameraProvider.bindToLifecycle(
-                    this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
+                this as LifecycleOwner, cameraSelector, preview, imageAnalysis
+            )
 
             // Use the camera object to link our preview use case with the view
             preview.setSurfaceProvider(view_finder.createSurfaceProvider(camera.cameraInfo))
@@ -216,8 +331,16 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun reportPrediction(
-            prediction: ObjectDetectionHelper.ObjectPrediction?
+        prediction: ObjectDetectionHelper.ObjectPrediction?
     ) = view_finder.post {
+
+        if(JobStatus == JobType.INIT) {
+            Toast.makeText(this, "Not searching for any object", Toast.LENGTH_SHORT).show()
+            return@post
+        } else if(JobStatus == JobType.SEARCHING_OBJECT) {
+            Toast.makeText(this, "Looking for "+object_name, Toast.LENGTH_SHORT).show()
+            //return@post
+        }
 
         // Early exit: if prediction is not good enough, don't report it
         if (prediction == null || prediction.score < ACCURACY_THRESHOLD) {
@@ -229,7 +352,26 @@ class CameraActivity : AppCompatActivity() {
         // Location has to be mapped to our local coordinates
         val location = mapOutputCoordinates(prediction.location)
 
-        onDrawFrame()
+        if(prediction.label.toLowerCase() == object_name.toLowerCase()) {
+            if (JobStatus ==  JobType.SEARCHING_OBJECT) {
+                 mTTS.speak(
+                    object_name + "Found. Connecting person to help further",
+                    TextToSpeech.QUEUE_ADD,
+                    null
+                )
+                Thread.sleep(1_500)
+                val uri: Uri =
+                    Uri.parse("https://msngr.com/rtjydvbegvlc?funnel_session_id=_3b8d521f-af4c-4a57-896c-95cff5e1726d") // missing 'http://' will cause crashed
+                val url_intent = Intent(Intent.ACTION_VIEW, uri)
+                startActivity(url_intent)
+                //pauseAnalysis = true
+                JobStatus = JobType.INIT
+                object_name = " "
+                // Make sure all UI elements are visible
+                //box_prediction.visibility = View.VISIBLE
+                //text_prediction.visibility = View.VISIBLE
+            }
+        }
 
         // Update the text and UI
         text_prediction.text = "${"%.2f".format(prediction.score)} ${prediction.label}"
@@ -253,10 +395,10 @@ class CameraActivity : AppCompatActivity() {
 
         // Step 1: map location to the preview coordinates
         val previewLocation = RectF(
-                location.left * view_finder.width,
-                location.top * view_finder.height,
-                location.right * view_finder.width,
-                location.bottom * view_finder.height
+            location.left * view_finder.width,
+            location.top * view_finder.height,
+            location.right * view_finder.width,
+            location.bottom * view_finder.height
         )
 
         // Step 2: compensate for camera sensor orientation and mirroring
@@ -266,10 +408,10 @@ class CameraActivity : AppCompatActivity() {
             (!isFrontFacing && isFlippedOrientation) ||
             (isFrontFacing && !isFlippedOrientation)) {
             RectF(
-                    view_finder.width - previewLocation.right,
-                    view_finder.height - previewLocation.bottom,
-                    view_finder.width - previewLocation.left,
-                    view_finder.height - previewLocation.top
+                view_finder.width - previewLocation.right,
+                view_finder.height - previewLocation.bottom,
+                view_finder.width - previewLocation.left,
+                view_finder.height - previewLocation.top
             )
         } else {
             previewLocation
@@ -282,49 +424,49 @@ class CameraActivity : AppCompatActivity() {
         val midY = (rotatedLocation.top + rotatedLocation.bottom) / 2f
         return if (view_finder.width < view_finder.height) {
             RectF(
-                    midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                    midY - (1f - margin) * rotatedLocation.height() / 2f,
-                    midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                    midY + (1f - margin) * rotatedLocation.height() / 2f
+                midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                midY - (1f - margin) * rotatedLocation.height() / 2f,
+                midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                midY + (1f - margin) * rotatedLocation.height() / 2f
             )
         } else {
             RectF(
-                    midX - (1f - margin) * rotatedLocation.width() / 2f,
-                    midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
-                    midX + (1f - margin) * rotatedLocation.width() / 2f,
-                    midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
+                midX - (1f - margin) * rotatedLocation.width() / 2f,
+                midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
+                midX + (1f - margin) * rotatedLocation.width() / 2f,
+                midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
             )
         }
     }
 
     override fun onResume() {
         super.onResume()
-
-
         // Request permissions each time the app resumes, since they can be revoked at any time
         if (!hasPermissions(this)) {
             ActivityCompat.requestPermissions(
-                    this, permissions.toTypedArray(), permissionsRequestCode)
+                this, permissions.toTypedArray(), permissionsRequestCode
+            )
         } else {
             bindCameraUseCases()
         }
-        session.resume()
+       // session.resume()
     }
 
     override fun onStart() {
         super.onStart()
-        session.resume()
+        //session.resume()
     }
 
     override fun onPause() {
         super.onPause()
-        session.pause()
+        mTTS.stop()
+        //session.pause()
     }
 
     override fun onRequestPermissionsResult(
-            requestCode: Int,
-            permissions: Array<out String>,
-            grantResults: IntArray
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionsRequestCode && hasPermissions(this)) {
