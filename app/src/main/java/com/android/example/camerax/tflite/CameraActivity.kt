@@ -23,6 +23,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.RectF
+import android.opengl.GLES20
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
@@ -48,6 +49,7 @@ import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 import kotlin.random.Random
 
@@ -57,6 +59,7 @@ class CameraActivity : AppCompatActivity() {
 
     private lateinit var container: ConstraintLayout
     private lateinit var bitmapBuffer: Bitmap
+    private val sharedCamera: SharedCamera? = null
 
     private val executor = Executors.newSingleThreadExecutor()
     private val permissions = listOf(Manifest.permission.CAMERA)
@@ -71,6 +74,7 @@ class CameraActivity : AppCompatActivity() {
     private lateinit var session: Session
     private var placementIsDone = false;
     var placed = false
+    private var isFirstFrameAfterResume = AtomicBoolean(true)
 
 
     private val tfImageProcessor by lazy {
@@ -318,16 +322,18 @@ class CameraActivity : AppCompatActivity() {
             bindCameraUseCases()
         }
         session.resume()
+        isFirstFrameAfterResume.set(true);
     }
 
     override fun onStart() {
         super.onStart()
-        session.resume()
+        //session.resume()
     }
 
     override fun onPause() {
         super.onPause()
         session.pause()
+        isFirstFrameAfterResume.set(true);
     }
 
     override fun onRequestPermissionsResult(
@@ -373,6 +379,14 @@ class CameraActivity : AppCompatActivity() {
     fun onDrawFrame() {
 
         val frame = session.update();
+        if (isFirstFrameAfterResume.getAndSet(false)) {
+            // Leak a texture to force ARCore to allocate and register another.
+            // Note that we're only leaking a texture handle, so leak should be very small, and
+            // relatively infrequent (that is, not on order of framerate).
+            sharedCamera?.getSurfaceTexture()?.detachFromGLContext()
+            val leakedTextures = IntArray(1)
+            GLES20.glGenTextures(1, leakedTextures, 0)
+        }
 
         // Place an object on tap.
         if (!placementIsDone /*&& didUserTap()*/) {
