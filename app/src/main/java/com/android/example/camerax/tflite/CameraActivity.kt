@@ -63,7 +63,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
     private lateinit var container: ConstraintLayout
     private lateinit var bitmapBuffer: Bitmap
     private val sharedCamera: SharedCamera? = null
-    private val surfaceView: GLSurfaceView? = null
+    private var surfaceView: GLSurfaceView? = null
 
     private val executor = Executors.newSingleThreadExecutor()
     private val permissions = listOf(Manifest.permission.CAMERA)
@@ -117,6 +117,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
         setContentView(R.layout.activity_camera)
         container = findViewById(R.id.camera_container)
         createSession()
+        surfaceView = findViewById(R.id.surfaceview)
         // Set up renderer.
         surfaceView!!.preserveEGLContextOnPause = true
         surfaceView!!.setEGLContextClientVersion(2)
