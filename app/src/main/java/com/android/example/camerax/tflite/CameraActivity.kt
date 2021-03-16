@@ -23,9 +23,9 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.RectF
+import android.media.Image
 import android.opengl.GLES20
 import android.os.Bundle
-import android.util.Log
 import android.util.Size
 import android.view.View
 import android.view.ViewGroup
@@ -37,6 +37,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.google.ar.core.*
+import com.google.ar.core.exceptions.NotYetAvailableException
 import kotlinx.android.synthetic.main.activity_camera.*
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
@@ -160,56 +161,39 @@ class CameraActivity : AppCompatActivity() {
                 .setTargetRotation(view_finder.display.rotation)
                 .build()
 
-            // Set up the image analysis use case which will process frames in real time
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                .setTargetRotation(view_finder.display.rotation)
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
+            // Obtain the current frame from ARSession. When the configuration is set to
+            // UpdateMode.BLOCKING (it is by default), this will throttle the rendering to the
+            // camera framerate.
+            val frame: Frame = session.update()
+            val image: Image
+            try {
+                frame.acquireCameraImage().use { image ->
+                    if (!::bitmapBuffer.isInitialized) {
+                        // The image rotation and RGB image buffer are initialized only once
+                        // the analyzer has started running
+                        imageRotationDegrees = 0
+                        bitmapBuffer = Bitmap.createBitmap(
+                            image.width, image.height, Bitmap.Config.ARGB_8888
+                        )
+                    }
+                }
+            } catch (e: NotYetAvailableException) {
+                // This normally means that depth data is not available yet. This is normal so we will not
+                // spam the logcat with this.
+            }
 
             var frameCounter = 0
             var lastFpsTimestamp = System.currentTimeMillis()
             val converter = YuvToRgbConverter(this)
 
-            imageAnalysis.setAnalyzer(executor, ImageAnalysis.Analyzer { image ->
-                if (!::bitmapBuffer.isInitialized) {
-                    // The image rotation and RGB image buffer are initialized only once
-                    // the analyzer has started running
-                    imageRotationDegrees = image.imageInfo.rotationDegrees
-                    bitmapBuffer = Bitmap.createBitmap(
-                        image.width, image.height, Bitmap.Config.ARGB_8888
-                    )
-                }
+            // Process the image in Tensorflow
+            val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
 
-                // Early exit: image analysis is in paused state
-                if (pauseAnalysis) {
-                    image.close()
-                    return@Analyzer
-                }
+            // Perform the object detection for the current frame
+            val predictions = detector.predict(tfImage)
 
-                // Convert the image to RGB and place it in our shared buffer
-                image.use { converter.yuvToRgb(image.image!!, bitmapBuffer) }
-
-                // Process the image in Tensorflow
-                val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
-
-                // Perform the object detection for the current frame
-                val predictions = detector.predict(tfImage)
-
-                // Report only the top prediction
-                reportPrediction(predictions.maxBy { it.score })
-
-                // Compute the FPS of the entire pipeline
-                val frameCount = 10
-                if (++frameCounter % frameCount == 0) {
-                    frameCounter = 0
-                    val now = System.currentTimeMillis()
-                    val delta = now - lastFpsTimestamp
-                    val fps = 1000 * frameCount.toFloat() / delta
-                    Log.d(TAG, "FPS: ${"%.02f".format(fps)}")
-                    lastFpsTimestamp = now
-                }
-            })
+            // Report only the top prediction
+            reportPrediction(predictions.maxBy { it.score })
 
             // Create a new camera selector each time, enforcing lens facing
             val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
@@ -217,7 +201,7 @@ class CameraActivity : AppCompatActivity() {
             // Apply declared configs to CameraX using the same lifecycle owner
             cameraProvider.unbindAll()
             val camera = cameraProvider.bindToLifecycle(
-                this as LifecycleOwner, cameraSelector, preview, imageAnalysis
+                this as LifecycleOwner, cameraSelector, preview
             )
 
             // Use the camera object to link our preview use case with the view
