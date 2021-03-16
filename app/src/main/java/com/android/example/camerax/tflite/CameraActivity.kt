@@ -25,8 +25,8 @@ import android.graphics.Matrix
 import android.graphics.RectF
 import android.media.Image
 import android.opengl.GLES20
+import android.opengl.GLSurfaceView
 import android.os.Bundle
-import android.util.Log
 import android.util.Size
 import android.view.View
 import android.view.ViewGroup
@@ -50,19 +50,20 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
-import java.sql.Types.NULL
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 import kotlin.math.min
 import kotlin.random.Random
 
-
 /** Activity that displays the camera and performs object detection on the incoming frames */
-class CameraActivity : AppCompatActivity() {
+class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
 
     private lateinit var container: ConstraintLayout
     private lateinit var bitmapBuffer: Bitmap
     private val sharedCamera: SharedCamera? = null
+    private val surfaceView: GLSurfaceView? = null
 
     private val executor = Executors.newSingleThreadExecutor()
     private val permissions = listOf(Manifest.permission.CAMERA)
@@ -96,7 +97,7 @@ class CameraActivity : AppCompatActivity() {
 
     private val tflite by lazy {
         Interpreter(
-                 FileUtil.loadMappedFile(this, MODEL_PATH),
+                FileUtil.loadMappedFile(this, MODEL_PATH),
                 Interpreter.Options().addDelegate(NnApiDelegate())
         )
     }
@@ -116,6 +117,14 @@ class CameraActivity : AppCompatActivity() {
         setContentView(R.layout.activity_camera)
         container = findViewById(R.id.camera_container)
         createSession()
+        // Set up renderer.
+        surfaceView!!.preserveEGLContextOnPause = true
+        surfaceView!!.setEGLContextClientVersion(2)
+        surfaceView!!.setEGLConfigChooser(8, 8, 8, 8, 16, 0) // Alpha used for plane blending.
+
+        surfaceView!!.setRenderer(this)
+        surfaceView!!.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        surfaceView!!.setWillNotDraw(false)
 
         // Listener for button used to capture photo
         camera_capture_button.setOnClickListener {
@@ -159,9 +168,9 @@ class CameraActivity : AppCompatActivity() {
 
             // Set up the view finder use case to display camera preview
             val preview = Preview.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                .setTargetRotation(view_finder.display.rotation)
-                .build()
+                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                    .setTargetRotation(view_finder.display.rotation)
+                    .build()
 
             // Obtain the current frame from ARSession. When the configuration is set to
             // UpdateMode.BLOCKING (it is by default), this will throttle the rendering to the
@@ -264,7 +273,7 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun reportPrediction(
-        prediction: ObjectDetectionHelper.ObjectPrediction?
+            prediction: ObjectDetectionHelper.ObjectPrediction?
     ) = view_finder.post {
 
         // Early exit: if prediction is not good enough, don't report it
@@ -277,7 +286,7 @@ class CameraActivity : AppCompatActivity() {
         // Location has to be mapped to our local coordinates
         val location = mapOutputCoordinates(prediction.location)
 
-        onDrawFrame()
+        //onDrawFrame()
 
         // Update the text and UI
         text_prediction.text = "${"%.2f".format(prediction.score)} ${prediction.label}"
@@ -301,10 +310,10 @@ class CameraActivity : AppCompatActivity() {
 
         // Step 1: map location to the preview coordinates
         val previewLocation = RectF(
-            location.left * view_finder.width,
-            location.top * view_finder.height,
-            location.right * view_finder.width,
-            location.bottom * view_finder.height
+                location.left * view_finder.width,
+                location.top * view_finder.height,
+                location.right * view_finder.width,
+                location.bottom * view_finder.height
         )
 
         // Step 2: compensate for camera sensor orientation and mirroring
@@ -315,10 +324,10 @@ class CameraActivity : AppCompatActivity() {
             (isFrontFacing && !isFlippedOrientation)
         ) {
             RectF(
-                view_finder.width - previewLocation.right,
-                view_finder.height - previewLocation.bottom,
-                view_finder.width - previewLocation.left,
-                view_finder.height - previewLocation.top
+                    view_finder.width - previewLocation.right,
+                    view_finder.height - previewLocation.bottom,
+                    view_finder.width - previewLocation.left,
+                    view_finder.height - previewLocation.top
             )
         } else {
             previewLocation
@@ -331,17 +340,17 @@ class CameraActivity : AppCompatActivity() {
         val midY = (rotatedLocation.top + rotatedLocation.bottom) / 2f
         return if (view_finder.width < view_finder.height) {
             RectF(
-                midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                midY - (1f - margin) * rotatedLocation.height() / 2f,
-                midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                midY + (1f - margin) * rotatedLocation.height() / 2f
+                    midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                    midY - (1f - margin) * rotatedLocation.height() / 2f,
+                    midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                    midY + (1f - margin) * rotatedLocation.height() / 2f
             )
         } else {
             RectF(
-                midX - (1f - margin) * rotatedLocation.width() / 2f,
-                midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
-                midX + (1f - margin) * rotatedLocation.width() / 2f,
-                midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
+                    midX - (1f - margin) * rotatedLocation.width() / 2f,
+                    midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
+                    midX + (1f - margin) * rotatedLocation.width() / 2f,
+                    midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
             )
         }
     }
@@ -359,6 +368,7 @@ class CameraActivity : AppCompatActivity() {
             bindCameraUseCases()
         }
         session.resume()
+        surfaceView!!.onResume()
         isFirstFrameAfterResume.set(true);
     }
 
@@ -369,14 +379,15 @@ class CameraActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        surfaceView!!.onPause()
         session.pause()
         isFirstFrameAfterResume.set(true);
     }
 
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
+            requestCode: Int,
+            permissions: Array<out String>,
+            grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionsRequestCode && hasPermissions(this)) {
@@ -406,6 +417,7 @@ class CameraActivity : AppCompatActivity() {
         // Set the Instant Placement mode.
         config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
         session.configure(config)
+        session.resume()
     }
 
     override fun onDestroy() {
@@ -413,17 +425,17 @@ class CameraActivity : AppCompatActivity() {
         session.close()
     }
 
-    fun onDrawFrame() {
+    override fun onSurfaceCreated(p0: GL10?, p1: EGLConfig?) {
+        GLES20.glClearColor(0.1f, 0.1f, 0.1f, 1.0f)
+    }
+
+    override fun onSurfaceChanged(p0: GL10?, p1: Int, p2: Int) {
+        GLES20.glViewport(0, 0, p1, p2)
+    }
+
+    override fun onDrawFrame(p0: GL10?) {
 
         val frame = session.update();
-        if (isFirstFrameAfterResume.getAndSet(false)) {
-            // Leak a texture to force ARCore to allocate and register another.
-            // Note that we're only leaking a texture handle, so leak should be very small, and
-            // relatively infrequent (that is, not on order of framerate).
-            sharedCamera?.getSurfaceTexture()?.detachFromGLContext()
-            val leakedTextures = IntArray(1)
-            GLES20.glGenTextures(1, leakedTextures, 0)
-        }
 
         // Place an object on tap.
         if (!placementIsDone /*&& didUserTap()*/) {
