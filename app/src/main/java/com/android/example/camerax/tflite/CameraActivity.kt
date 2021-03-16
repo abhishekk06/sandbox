@@ -23,6 +23,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.RectF
+import android.media.Image
 import android.opengl.GLES20
 import android.os.Bundle
 import android.util.Log
@@ -37,6 +38,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.google.ar.core.*
+import com.google.ar.core.exceptions.NotYetAvailableException
 import kotlinx.android.synthetic.main.activity_camera.*
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
@@ -48,6 +50,7 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
+import java.sql.Types.NULL
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
@@ -82,9 +85,9 @@ class CameraActivity : AppCompatActivity() {
         ImageProcessor.Builder()
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
             .add(
-                ResizeOp(
-                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR
-                )
+                    ResizeOp(
+                            tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR
+                    )
             )
             .add(Rot90Op(imageRotationDegrees / 90))
             .add(NormalizeOp(0f, 1f))
@@ -93,8 +96,8 @@ class CameraActivity : AppCompatActivity() {
 
     private val tflite by lazy {
         Interpreter(
-            FileUtil.loadMappedFile(this, MODEL_PATH),
-            Interpreter.Options().addDelegate(NnApiDelegate())
+                 FileUtil.loadMappedFile(this, MODEL_PATH),
+                Interpreter.Options().addDelegate(NnApiDelegate())
         )
     }
 
@@ -133,7 +136,7 @@ class CameraActivity : AppCompatActivity() {
                     if (isFrontFacing) postScale(-1f, 1f)
                 }
                 val uprightImage = Bitmap.createBitmap(
-                    bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
+                        bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
                 )
                 image_predicted.setImageBitmap(uprightImage)
                 image_predicted.visibility = View.VISIBLE
@@ -160,24 +163,57 @@ class CameraActivity : AppCompatActivity() {
                 .setTargetRotation(view_finder.display.rotation)
                 .build()
 
+            // Obtain the current frame from ARSession. When the configuration is set to
+            // UpdateMode.BLOCKING (it is by default), this will throttle the rendering to the
+            // camera framerate.
+            val frame: Frame = session.update()
+            val image: Image
+            try {
+                frame.acquireCameraImage().use { image ->
+                    if (!::bitmapBuffer.isInitialized) {
+                        // The image rotation and RGB image buffer are initialized only once
+                        // the analyzer has started running
+                        imageRotationDegrees = 0
+                        bitmapBuffer = Bitmap.createBitmap(
+                                image.width, image.height, Bitmap.Config.ARGB_8888
+                        )
+                    }
+                }
+            } catch (e: NotYetAvailableException) {
+                // This normally means that depth data is not available yet. This is normal so we will not
+                // spam the logcat with this.
+            }
+
+
             // Set up the image analysis use case which will process frames in real time
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                .setTargetRotation(view_finder.display.rotation)
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
+            /*val imageAnalysis = ImageAnalysis.Builder()
+                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                    .setTargetRotation(view_finder.display.rotation)
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()*/
 
             var frameCounter = 0
             var lastFpsTimestamp = System.currentTimeMillis()
             val converter = YuvToRgbConverter(this)
 
-            imageAnalysis.setAnalyzer(executor, ImageAnalysis.Analyzer { image ->
+            //image.use { converter.yuvToRgb(image, bitmapBuffer) } HOW to convert from yuv to rgb
+
+            // Process the image in Tensorflow
+            val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
+
+            // Perform the object detection for the current frame
+            val predictions = detector.predict(tfImage)
+
+            // Report only the top prediction
+            reportPrediction(predictions.maxBy { it.score })
+
+            /*imageAnalysis.setAnalyzer(executor, ImageAnalysis.Analyzer { image ->
                 if (!::bitmapBuffer.isInitialized) {
                     // The image rotation and RGB image buffer are initialized only once
                     // the analyzer has started running
                     imageRotationDegrees = image.imageInfo.rotationDegrees
                     bitmapBuffer = Bitmap.createBitmap(
-                        image.width, image.height, Bitmap.Config.ARGB_8888
+                            image.width, image.height, Bitmap.Config.ARGB_8888
                     )
                 }
 
@@ -210,6 +246,7 @@ class CameraActivity : AppCompatActivity() {
                     lastFpsTimestamp = now
                 }
             })
+            */
 
             // Create a new camera selector each time, enforcing lens facing
             val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
@@ -217,7 +254,7 @@ class CameraActivity : AppCompatActivity() {
             // Apply declared configs to CameraX using the same lifecycle owner
             cameraProvider.unbindAll()
             val camera = cameraProvider.bindToLifecycle(
-                this as LifecycleOwner, cameraSelector, preview, imageAnalysis
+                    this as LifecycleOwner, cameraSelector, preview/*, imageAnalysis*/
             )
 
             // Use the camera object to link our preview use case with the view
@@ -316,7 +353,7 @@ class CameraActivity : AppCompatActivity() {
         // Request permissions each time the app resumes, since they can be revoked at any time
         if (!hasPermissions(this)) {
             ActivityCompat.requestPermissions(
-                this, permissions.toTypedArray(), permissionsRequestCode
+                    this, permissions.toTypedArray(), permissionsRequestCode
             )
         } else {
             bindCameraUseCases()
