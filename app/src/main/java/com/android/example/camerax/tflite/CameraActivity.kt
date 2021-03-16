@@ -77,8 +77,11 @@ class CameraActivity : AppCompatActivity() {
         val cropSize = minOf(bitmapBuffer.width, bitmapBuffer.height)
         ImageProcessor.Builder()
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
-            .add(ResizeOp(
-                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
+            .add(
+                ResizeOp(
+                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR
+                )
+            )
             .add(Rot90Op(imageRotationDegrees / 90))
             .add(NormalizeOp(0f, 1f))
             .build()
@@ -86,8 +89,9 @@ class CameraActivity : AppCompatActivity() {
 
     private val tflite by lazy {
         Interpreter(
-                FileUtil.loadMappedFile(this, MODEL_PATH),
-                Interpreter.Options().addDelegate(NnApiDelegate()))
+            FileUtil.loadMappedFile(this, MODEL_PATH),
+            Interpreter.Options().addDelegate(NnApiDelegate())
+        )
     }
 
     private val detector by lazy {
@@ -125,7 +129,8 @@ class CameraActivity : AppCompatActivity() {
                     if (isFrontFacing) postScale(-1f, 1f)
                 }
                 val uprightImage = Bitmap.createBitmap(
-                        bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true)
+                    bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
+                )
                 image_predicted.setImageBitmap(uprightImage)
                 image_predicted.visibility = View.VISIBLE
             }
@@ -147,16 +152,16 @@ class CameraActivity : AppCompatActivity() {
 
             // Set up the view finder use case to display camera preview
             val preview = Preview.Builder()
-                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setTargetRotation(view_finder.display.rotation)
-                    .build()
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                .setTargetRotation(view_finder.display.rotation)
+                .build()
 
             // Set up the image analysis use case which will process frames in real time
             val imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setTargetRotation(view_finder.display.rotation)
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                .setTargetRotation(view_finder.display.rotation)
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
 
             var frameCounter = 0
             var lastFpsTimestamp = System.currentTimeMillis()
@@ -168,7 +173,8 @@ class CameraActivity : AppCompatActivity() {
                     // the analyzer has started running
                     imageRotationDegrees = image.imageInfo.rotationDegrees
                     bitmapBuffer = Bitmap.createBitmap(
-                            image.width, image.height, Bitmap.Config.ARGB_8888)
+                        image.width, image.height, Bitmap.Config.ARGB_8888
+                    )
                 }
 
                 // Early exit: image analysis is in paused state
@@ -207,7 +213,8 @@ class CameraActivity : AppCompatActivity() {
             // Apply declared configs to CameraX using the same lifecycle owner
             cameraProvider.unbindAll()
             val camera = cameraProvider.bindToLifecycle(
-                    this as LifecycleOwner, cameraSelector, preview, imageAnalysis)
+                this as LifecycleOwner, cameraSelector, preview, imageAnalysis
+            )
 
             // Use the camera object to link our preview use case with the view
             preview.setSurfaceProvider(view_finder.createSurfaceProvider(camera.cameraInfo))
@@ -216,7 +223,7 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun reportPrediction(
-            prediction: ObjectDetectionHelper.ObjectPrediction?
+        prediction: ObjectDetectionHelper.ObjectPrediction?
     ) = view_finder.post {
 
         // Early exit: if prediction is not good enough, don't report it
@@ -276,10 +283,10 @@ class CameraActivity : AppCompatActivity() {
 
         // Step 1: map location to the preview coordinates
         val previewLocation = RectF(
-                location.left * view_finder.width,
-                location.top * view_finder.height,
-                location.right * view_finder.width,
-                location.bottom * view_finder.height
+            location.left * view_finder.width,
+            location.top * view_finder.height,
+            location.right * view_finder.width,
+            location.bottom * view_finder.height
         )
 
         // Step 2: compensate for camera sensor orientation and mirroring
@@ -287,12 +294,13 @@ class CameraActivity : AppCompatActivity() {
         val isFlippedOrientation = imageRotationDegrees == 90 || imageRotationDegrees == 270
         val rotatedLocation = if (
             (!isFrontFacing && isFlippedOrientation) ||
-            (isFrontFacing && !isFlippedOrientation)) {
+            (isFrontFacing && !isFlippedOrientation)
+        ) {
             RectF(
-                    view_finder.width - previewLocation.right,
-                    view_finder.height - previewLocation.bottom,
-                    view_finder.width - previewLocation.left,
-                    view_finder.height - previewLocation.top
+                view_finder.width - previewLocation.right,
+                view_finder.height - previewLocation.bottom,
+                view_finder.width - previewLocation.left,
+                view_finder.height - previewLocation.top
             )
         } else {
             previewLocation
@@ -305,17 +313,17 @@ class CameraActivity : AppCompatActivity() {
         val midY = (rotatedLocation.top + rotatedLocation.bottom) / 2f
         return if (view_finder.width < view_finder.height) {
             RectF(
-                    midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                    midY - (1f - margin) * rotatedLocation.height() / 2f,
-                    midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                    midY + (1f - margin) * rotatedLocation.height() / 2f
+                midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                midY - (1f - margin) * rotatedLocation.height() / 2f,
+                midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                midY + (1f - margin) * rotatedLocation.height() / 2f
             )
         } else {
             RectF(
-                    midX - (1f - margin) * rotatedLocation.width() / 2f,
-                    midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
-                    midX + (1f - margin) * rotatedLocation.width() / 2f,
-                    midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
+                midX - (1f - margin) * rotatedLocation.width() / 2f,
+                midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
+                midX + (1f - margin) * rotatedLocation.width() / 2f,
+                midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
             )
         }
     }
@@ -326,7 +334,8 @@ class CameraActivity : AppCompatActivity() {
         // Request permissions each time the app resumes, since they can be revoked at any time
         if (!hasPermissions(this)) {
             ActivityCompat.requestPermissions(
-                    this, permissions.toTypedArray(), permissionsRequestCode)
+                this, permissions.toTypedArray(), permissionsRequestCode
+            )
         } else {
             bindCameraUseCases()
         }
@@ -337,9 +346,9 @@ class CameraActivity : AppCompatActivity() {
     }
 
     override fun onRequestPermissionsResult(
-            requestCode: Int,
-            permissions: Array<out String>,
-            grantResults: IntArray
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionsRequestCode && hasPermissions(this)) {
