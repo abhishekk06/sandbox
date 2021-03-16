@@ -58,7 +58,7 @@ import kotlin.math.min
 import kotlin.random.Random
 
 /** Activity that displays the camera and performs object detection on the incoming frames */
-class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
+class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private lateinit var container: ConstraintLayout
     private lateinit var bitmapBuffer: Bitmap
@@ -86,9 +86,9 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
         ImageProcessor.Builder()
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
             .add(
-                    ResizeOp(
-                            tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR
-                    )
+                ResizeOp(
+                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR
+                )
             )
             .add(Rot90Op(imageRotationDegrees / 90))
             .add(NormalizeOp(0f, 1f))
@@ -97,8 +97,8 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
 
     private val tflite by lazy {
         Interpreter(
-                FileUtil.loadMappedFile(this, MODEL_PATH),
-                Interpreter.Options().addDelegate(NnApiDelegate())
+            FileUtil.loadMappedFile(this, MODEL_PATH),
+            Interpreter.Options().addDelegate(NnApiDelegate())
         )
     }
 
@@ -146,7 +146,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
                     if (isFrontFacing) postScale(-1f, 1f)
                 }
                 val uprightImage = Bitmap.createBitmap(
-                        bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
+                    bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
                 )
                 image_predicted.setImageBitmap(uprightImage)
                 image_predicted.visibility = View.VISIBLE
@@ -155,6 +155,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
             // Re-enable camera controls
             it.isEnabled = true
         }
+
     }
 
     /** Declare and bind preview and analysis use cases */
@@ -169,9 +170,9 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
 
             // Set up the view finder use case to display camera preview
             val preview = Preview.Builder()
-                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setTargetRotation(view_finder.display.rotation)
-                    .build()
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                .setTargetRotation(view_finder.display.rotation)
+                .build()
 
             // Obtain the current frame from ARSession. When the configuration is set to
             // UpdateMode.BLOCKING (it is by default), this will throttle the rendering to the
@@ -185,7 +186,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
                         // the analyzer has started running
                         imageRotationDegrees = 0
                         bitmapBuffer = Bitmap.createBitmap(
-                                image.width, image.height, Bitmap.Config.ARGB_8888
+                            image.width, image.height, Bitmap.Config.ARGB_8888
                         )
                     }
                 }
@@ -264,7 +265,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
             // Apply declared configs to CameraX using the same lifecycle owner
             cameraProvider.unbindAll()
             val camera = cameraProvider.bindToLifecycle(
-                    this as LifecycleOwner, cameraSelector, preview/*, imageAnalysis*/
+                this as LifecycleOwner, cameraSelector, preview/*, imageAnalysis*/
             )
 
             // Use the camera object to link our preview use case with the view
@@ -273,9 +274,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun reportPrediction(
-            prediction: ObjectDetectionHelper.ObjectPrediction?
-    ) = view_finder.post {
+    private fun reportPrediction(prediction: ObjectDetectionHelper.ObjectPrediction?) = view_finder.post {
 
         // Early exit: if prediction is not good enough, don't report it
         if (prediction == null || prediction.score < ACCURACY_THRESHOLD) {
@@ -311,10 +310,10 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
 
         // Step 1: map location to the preview coordinates
         val previewLocation = RectF(
-                location.left * view_finder.width,
-                location.top * view_finder.height,
-                location.right * view_finder.width,
-                location.bottom * view_finder.height
+            location.left * view_finder.width,
+            location.top * view_finder.height,
+            location.right * view_finder.width,
+            location.bottom * view_finder.height
         )
 
         // Step 2: compensate for camera sensor orientation and mirroring
@@ -325,10 +324,10 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
             (isFrontFacing && !isFlippedOrientation)
         ) {
             RectF(
-                    view_finder.width - previewLocation.right,
-                    view_finder.height - previewLocation.bottom,
-                    view_finder.width - previewLocation.left,
-                    view_finder.height - previewLocation.top
+                view_finder.width - previewLocation.right,
+                view_finder.height - previewLocation.bottom,
+                view_finder.width - previewLocation.left,
+                view_finder.height - previewLocation.top
             )
         } else {
             previewLocation
@@ -341,17 +340,17 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
         val midY = (rotatedLocation.top + rotatedLocation.bottom) / 2f
         return if (view_finder.width < view_finder.height) {
             RectF(
-                    midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                    midY - (1f - margin) * rotatedLocation.height() / 2f,
-                    midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                    midY + (1f - margin) * rotatedLocation.height() / 2f
+                midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                midY - (1f - margin) * rotatedLocation.height() / 2f,
+                midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                midY + (1f - margin) * rotatedLocation.height() / 2f
             )
         } else {
             RectF(
-                    midX - (1f - margin) * rotatedLocation.width() / 2f,
-                    midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
-                    midX + (1f - margin) * rotatedLocation.width() / 2f,
-                    midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
+                midX - (1f - margin) * rotatedLocation.width() / 2f,
+                midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
+                midX + (1f - margin) * rotatedLocation.width() / 2f,
+                midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
             )
         }
     }
@@ -362,9 +361,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
 
         // Request permissions each time the app resumes, since they can be revoked at any time
         if (!hasPermissions(this)) {
-            ActivityCompat.requestPermissions(
-                    this, permissions.toTypedArray(), permissionsRequestCode
-            )
+            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), permissionsRequestCode)
         } else {
             bindCameraUseCases()
         }
@@ -385,11 +382,7 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
         isFirstFrameAfterResume.set(true);
     }
 
-    override fun onRequestPermissionsResult(
-            requestCode: Int,
-            permissions: Array<out String>,
-            grantResults: IntArray
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionsRequestCode && hasPermissions(this)) {
             bindCameraUseCases()
@@ -404,8 +397,6 @@ class CameraActivity : AppCompatActivity() , GLSurfaceView.Renderer {
     }
 
     companion object {
-        private val TAG = CameraActivity::class.java.simpleName
-
         private const val ACCURACY_THRESHOLD = 0.5f
         private const val MODEL_PATH = "coco_ssd_mobilenet_v1_1.0_quant.tflite"
         private const val LABELS_PATH = "coco_ssd_mobilenet_v1_1.0_labels.txt"
