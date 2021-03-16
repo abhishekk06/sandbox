@@ -19,13 +19,12 @@ apply plugin: "kotlin-android"
 apply plugin: 'kotlin-android-extensions'
 
 android {
-    compileSdkVersion 29
-    ndkVersion "21.0.6113669"
+    compileSdkVersion 30
 
     defaultConfig {
         applicationId 'com.android.example.camerax.tflite'
         minSdkVersion 24
-        targetSdkVersion 29
+        targetSdkVersion 30
         versionCode 1
         versionName "0.0.1"
     }
@@ -50,6 +49,7 @@ dependencies {
 
     // App compat and UI things
     implementation 'androidx.appcompat:appcompat:1.2.0'
+    implementation 'com.google.android.gms:play-services-location:18.0.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.3.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.0.4'
 
