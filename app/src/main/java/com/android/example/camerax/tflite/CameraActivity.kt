@@ -96,7 +96,7 @@ class CameraActivity : AppCompatActivity() {
 
     private val tflite by lazy {
         Interpreter(
-                FileUtil.loadMappedFile(this, MODEL_PATH),
+                 FileUtil.loadMappedFile(this, MODEL_PATH),
                 Interpreter.Options().addDelegate(NnApiDelegate())
         )
     }
@@ -159,9 +159,9 @@ class CameraActivity : AppCompatActivity() {
 
             // Set up the view finder use case to display camera preview
             val preview = Preview.Builder()
-                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
-                    .setTargetRotation(view_finder.display.rotation)
-                    .build()
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                .setTargetRotation(view_finder.display.rotation)
+                .build()
 
             // Obtain the current frame from ARSession. When the configuration is set to
             // UpdateMode.BLOCKING (it is by default), this will throttle the rendering to the
@@ -264,7 +264,7 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun reportPrediction(
-            prediction: ObjectDetectionHelper.ObjectPrediction?
+        prediction: ObjectDetectionHelper.ObjectPrediction?
     ) = view_finder.post {
 
         // Early exit: if prediction is not good enough, don't report it
@@ -301,10 +301,10 @@ class CameraActivity : AppCompatActivity() {
 
         // Step 1: map location to the preview coordinates
         val previewLocation = RectF(
-                location.left * view_finder.width,
-                location.top * view_finder.height,
-                location.right * view_finder.width,
-                location.bottom * view_finder.height
+            location.left * view_finder.width,
+            location.top * view_finder.height,
+            location.right * view_finder.width,
+            location.bottom * view_finder.height
         )
 
         // Step 2: compensate for camera sensor orientation and mirroring
@@ -312,12 +312,13 @@ class CameraActivity : AppCompatActivity() {
         val isFlippedOrientation = imageRotationDegrees == 90 || imageRotationDegrees == 270
         val rotatedLocation = if (
             (!isFrontFacing && isFlippedOrientation) ||
-            (isFrontFacing && !isFlippedOrientation)) {
+            (isFrontFacing && !isFlippedOrientation)
+        ) {
             RectF(
-                    view_finder.width - previewLocation.right,
-                    view_finder.height - previewLocation.bottom,
-                    view_finder.width - previewLocation.left,
-                    view_finder.height - previewLocation.top
+                view_finder.width - previewLocation.right,
+                view_finder.height - previewLocation.bottom,
+                view_finder.width - previewLocation.left,
+                view_finder.height - previewLocation.top
             )
         } else {
             previewLocation
@@ -330,17 +331,17 @@ class CameraActivity : AppCompatActivity() {
         val midY = (rotatedLocation.top + rotatedLocation.bottom) / 2f
         return if (view_finder.width < view_finder.height) {
             RectF(
-                    midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                    midY - (1f - margin) * rotatedLocation.height() / 2f,
-                    midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
-                    midY + (1f - margin) * rotatedLocation.height() / 2f
+                midX - (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                midY - (1f - margin) * rotatedLocation.height() / 2f,
+                midX + (1f + margin) * requestedRatio * rotatedLocation.width() / 2f,
+                midY + (1f - margin) * rotatedLocation.height() / 2f
             )
         } else {
             RectF(
-                    midX - (1f - margin) * rotatedLocation.width() / 2f,
-                    midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
-                    midX + (1f - margin) * rotatedLocation.width() / 2f,
-                    midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
+                midX - (1f - margin) * rotatedLocation.width() / 2f,
+                midY - (1f + margin) * requestedRatio * rotatedLocation.height() / 2f,
+                midX + (1f - margin) * rotatedLocation.width() / 2f,
+                midY + (1f + margin) * requestedRatio * rotatedLocation.height() / 2f
             )
         }
     }
@@ -373,9 +374,9 @@ class CameraActivity : AppCompatActivity() {
     }
 
     override fun onRequestPermissionsResult(
-            requestCode: Int,
-            permissions: Array<out String>,
-            grantResults: IntArray
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionsRequestCode && hasPermissions(this)) {
