@@ -27,6 +27,7 @@ import android.media.Image
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Bundle
+import android.util.Log
 import android.util.Size
 import android.view.View
 import android.view.ViewGroup
@@ -156,8 +157,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     /** Declare and bind preview and analysis use cases */
-    @SuppressLint("UnsafeExperimentalUsageError")
-    private fun bindCameraUseCases() = view_finder.post {
+    private fun bindCameraUseCases() {
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
@@ -174,6 +174,8 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             // Obtain the current frame from ARSession. When the configuration is set to
             // UpdateMode.BLOCKING (it is by default), this will throttle the rendering to the
             // camera framerate.
+            Log.w("sessionUpdate", Thread.currentThread().name)
+
             val frame: Frame = session.update()
             val image: Image
             try {
@@ -213,7 +215,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             val predictions = detector.predict(tfImage)
 
             // Report only the top prediction
-            reportPrediction(predictions.maxBy { it.score })
+            surfaceView.queueEvent { reportPrediction(predictions.maxByOrNull { it.score }) }
 
             /*imageAnalysis.setAnalyzer(executor, ImageAnalysis.Analyzer { image ->
                 if (!::bitmapBuffer.isInitialized) {
@@ -271,13 +273,13 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun reportPrediction(prediction: ObjectDetectionHelper.ObjectPrediction?) = view_finder.post {
+    private fun reportPrediction(prediction: ObjectDetectionHelper.ObjectPrediction?) {
 
         // Early exit: if prediction is not good enough, don't report it
         if (prediction == null || prediction.score < ACCURACY_THRESHOLD) {
             box_prediction.visibility = View.GONE
             text_prediction.visibility = View.GONE
-            return@post
+            return
         }
 
         // Location has to be mapped to our local coordinates
@@ -360,7 +362,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         if (!hasPermissions(this)) {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), permissionsRequestCode)
         } else {
-            bindCameraUseCases()
+            surfaceView.queueEvent { bindCameraUseCases() }
         }
         session.resume()
         surfaceView.onResume()
@@ -382,7 +384,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == permissionsRequestCode && hasPermissions(this)) {
-            bindCameraUseCases()
+            surfaceView.queueEvent { bindCameraUseCases() }
         } else {
             finish() // If we don't have the required permissions, we can't run
         }
@@ -423,6 +425,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     override fun onDrawFrame(p0: GL10?) {
+        Log.w("sessionDraw", Thread.currentThread().name)
 
         val frame = session.update()
 
