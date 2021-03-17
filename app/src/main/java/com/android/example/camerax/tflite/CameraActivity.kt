@@ -50,7 +50,6 @@ import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -62,10 +61,8 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private lateinit var container: ConstraintLayout
     private lateinit var bitmapBuffer: Bitmap
-    private val sharedCamera: SharedCamera? = null
-    private var surfaceView: GLSurfaceView? = null
+    private lateinit var surfaceView: GLSurfaceView
 
-    private val executor = Executors.newSingleThreadExecutor()
     private val permissions = listOf(Manifest.permission.CAMERA)
     private val permissionsRequestCode = Random.nextInt(0, 10000)
 
@@ -76,7 +73,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var imageRotationDegrees: Int = 0
     private val tfImageBuffer = TensorImage(DataType.UINT8)
     private lateinit var session: Session
-    private var placementIsDone = false;
+    private var placementIsDone = false
     var placed = false
     private var isFirstFrameAfterResume = AtomicBoolean(true)
 
@@ -119,13 +116,13 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         createSession()
         surfaceView = findViewById(R.id.surfaceview)
         // Set up renderer.
-        surfaceView!!.preserveEGLContextOnPause = true
-        surfaceView!!.setEGLContextClientVersion(2)
-        surfaceView!!.setEGLConfigChooser(8, 8, 8, 8, 16, 0) // Alpha used for plane blending.
+        surfaceView.preserveEGLContextOnPause = true
+        surfaceView.setEGLContextClientVersion(2)
+        surfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0) // Alpha used for plane blending.
 
-        surfaceView!!.setRenderer(this)
-        surfaceView!!.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-        surfaceView!!.setWillNotDraw(false)
+        surfaceView.setRenderer(this)
+        surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        surfaceView.setWillNotDraw(false)
 
         // Listener for button used to capture photo
         camera_capture_button.setOnClickListener {
@@ -163,7 +160,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private fun bindCameraUseCases() = view_finder.post {
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener(Runnable {
+        cameraProviderFuture.addListener({
 
             // Camera provider is now guaranteed to be available
             val cameraProvider = cameraProviderFuture.get()
@@ -366,8 +363,8 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             bindCameraUseCases()
         }
         session.resume()
-        surfaceView!!.onResume()
-        isFirstFrameAfterResume.set(true);
+        surfaceView.onResume()
+        isFirstFrameAfterResume.set(true)
     }
 
     override fun onStart() {
@@ -377,9 +374,9 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onPause() {
         super.onPause()
-        surfaceView!!.onPause()
+        surfaceView.onPause()
         session.pause()
-        isFirstFrameAfterResume.set(true);
+        isFirstFrameAfterResume.set(true)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -404,7 +401,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     // Create the ARCore session.
     fun createSession() {
-        session = Session(applicationContext);
+        session = Session(applicationContext)
         val config = Config(session)
         // Set the Instant Placement mode.
         config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
@@ -427,13 +424,13 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onDrawFrame(p0: GL10?) {
 
-        val frame = session.update();
+        val frame = session.update()
 
         // Place an object on tap.
         if (!placementIsDone /*&& didUserTap()*/) {
             // Use estimated distance from the user's device to the real world, based
             // on expected user interaction and behavior.
-            val approximateDistanceMeters = 2.0f;
+            val approximateDistanceMeters = 2.0f
             // Performs a ray cast given a screen tap position.
             val results = frame.hitTestInstantPlacement(0F, 0F, approximateDistanceMeters)
             if (results.isNotEmpty()) {
