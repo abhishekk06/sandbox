@@ -17,13 +17,11 @@
 package com.android.example.camerax.tflite
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.RectF
-import android.media.Image
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Bundle
@@ -32,13 +30,18 @@ import android.util.Size
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.*
+import androidx.camera.core.AspectRatio
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
-import com.google.ar.core.*
+import com.google.ar.core.Config
+import com.google.ar.core.Frame
+import com.google.ar.core.InstantPlacementPoint
+import com.google.ar.core.Session
 import com.google.ar.core.exceptions.NotYetAvailableException
 import kotlinx.android.synthetic.main.activity_camera.*
 import org.tensorflow.lite.DataType
@@ -61,7 +64,7 @@ import kotlin.random.Random
 class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private lateinit var container: ConstraintLayout
-    private lateinit var bitmapBuffer: Bitmap
+    private var bitmapBuffer: Bitmap? = null
     private lateinit var surfaceView: GLSurfaceView
 
     private val permissions = listOf(Manifest.permission.CAMERA)
@@ -80,17 +83,19 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
 
     private val tfImageProcessor by lazy {
-        val cropSize = minOf(bitmapBuffer.width, bitmapBuffer.height)
-        ImageProcessor.Builder()
-            .add(ResizeWithCropOrPadOp(cropSize, cropSize))
-            .add(
-                ResizeOp(
-                    tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR
+        bitmapBuffer?.let {
+            val cropSize = minOf(it.width, it.height)
+            ImageProcessor.Builder()
+                .add(ResizeWithCropOrPadOp(cropSize, cropSize))
+                .add(
+                    ResizeOp(
+                        tfInputSize.height, tfInputSize.width, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR
+                    )
                 )
-            )
-            .add(Rot90Op(imageRotationDegrees / 90))
-            .add(NormalizeOp(0f, 1f))
-            .build()
+                .add(Rot90Op(imageRotationDegrees / 90))
+                .add(NormalizeOp(0f, 1f))
+                .build()
+        }
     }
 
     private val tflite by lazy {
@@ -143,10 +148,10 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     postRotate(imageRotationDegrees.toFloat())
                     if (isFrontFacing) postScale(-1f, 1f)
                 }
-                val uprightImage = Bitmap.createBitmap(
-                    bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
-                )
-                image_predicted.setImageBitmap(uprightImage)
+                bitmapBuffer?.let {
+                    val uprightImage = Bitmap.createBitmap(it, 0, 0, it.width, it.height, matrix, true)
+                    image_predicted.setImageBitmap(uprightImage)
+                }
                 image_predicted.visibility = View.VISIBLE
             }
 
@@ -176,24 +181,20 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             // camera framerate.
             Log.w("sessionUpdate", Thread.currentThread().name)
 
-            val frame: Frame = session.update()
-            val image: Image
-            try {
-                frame.acquireCameraImage().use { image ->
-                    if (!::bitmapBuffer.isInitialized) {
+            surfaceView.queueEvent {
+                val frame: Frame = session.update()
+                try {
+                    frame.acquireCameraImage().use { image ->
                         // The image rotation and RGB image buffer are initialized only once
                         // the analyzer has started running
                         imageRotationDegrees = 0
-                        bitmapBuffer = Bitmap.createBitmap(
-                            image.width, image.height, Bitmap.Config.ARGB_8888
-                        )
+                        bitmapBuffer = Bitmap.createBitmap(image.width, image.height, Bitmap.Config.ARGB_8888)
                     }
+                } catch (e: NotYetAvailableException) {
+                    // This normally means that depth data is not available yet. This is normal so we will not
+                    // spam the logcat with this.
                 }
-            } catch (e: NotYetAvailableException) {
-                // This normally means that depth data is not available yet. This is normal so we will not
-                // spam the logcat with this.
             }
-
 
             // Set up the image analysis use case which will process frames in real time
             /*val imageAnalysis = ImageAnalysis.Builder()
@@ -209,55 +210,59 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             //image.use { converter.yuvToRgb(image, bitmapBuffer) } HOW to convert from yuv to rgb
 
             // Process the image in Tensorflow
-            val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
+            bitmapBuffer?.let { bitmap ->
+                val tfImage = tfImageProcessor?.process(tfImageBuffer.apply { load(bitmap) })
 
-            // Perform the object detection for the current frame
-            val predictions = detector.predict(tfImage)
 
-            // Report only the top prediction
-            surfaceView.queueEvent { reportPrediction(predictions.maxByOrNull { it.score }) }
+                tfImage?.let {
+                    // Perform the object detection for the current frame
+                    val predictions = detector.predict(it)
 
-            /*imageAnalysis.setAnalyzer(executor, ImageAnalysis.Analyzer { image ->
-                if (!::bitmapBuffer.isInitialized) {
-                    // The image rotation and RGB image buffer are initialized only once
-                    // the analyzer has started running
-                    imageRotationDegrees = image.imageInfo.rotationDegrees
-                    bitmapBuffer = Bitmap.createBitmap(
-                            image.width, image.height, Bitmap.Config.ARGB_8888
-                    )
+                    // Report only the top prediction
+                    surfaceView.queueEvent { reportPrediction(predictions.maxByOrNull { it.score }) }
+
+                    /*imageAnalysis.setAnalyzer(executor, ImageAnalysis.Analyzer { image ->
+                    if (!::bitmapBuffer.isInitialized) {
+                        // The image rotation and RGB image buffer are initialized only once
+                        // the analyzer has started running
+                        imageRotationDegrees = image.imageInfo.rotationDegrees
+                        bitmapBuffer = Bitmap.createBitmap(
+                                image.width, image.height, Bitmap.Config.ARGB_8888
+                        )
+                    }
+
+                    // Early exit: image analysis is in paused state
+                    if (pauseAnalysis) {
+                        image.close()
+                        return@Analyzer
+                    }
+
+                    // Convert the image to RGB and place it in our shared buffer
+                    image.use { converter.yuvToRgb(image.image!!, bitmapBuffer) }
+
+                    // Process the image in Tensorflow
+                    val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
+
+                    // Perform the object detection for the current frame
+                    val predictions = detector.predict(tfImage)
+
+                    // Report only the top prediction
+                    reportPrediction(predictions.maxBy { it.score })
+
+                    // Compute the FPS of the entire pipeline
+                    val frameCount = 10
+                    if (++frameCounter % frameCount == 0) {
+                        frameCounter = 0
+                        val now = System.currentTimeMillis()
+                        val delta = now - lastFpsTimestamp
+                        val fps = 1000 * frameCount.toFloat() / delta
+                        Log.d(TAG, "FPS: ${"%.02f".format(fps)}")
+                        lastFpsTimestamp = now
+                    }
+                })
+                */
                 }
-
-                // Early exit: image analysis is in paused state
-                if (pauseAnalysis) {
-                    image.close()
-                    return@Analyzer
-                }
-
-                // Convert the image to RGB and place it in our shared buffer
-                image.use { converter.yuvToRgb(image.image!!, bitmapBuffer) }
-
-                // Process the image in Tensorflow
-                val tfImage = tfImageProcessor.process(tfImageBuffer.apply { load(bitmapBuffer) })
-
-                // Perform the object detection for the current frame
-                val predictions = detector.predict(tfImage)
-
-                // Report only the top prediction
-                reportPrediction(predictions.maxBy { it.score })
-
-                // Compute the FPS of the entire pipeline
-                val frameCount = 10
-                if (++frameCounter % frameCount == 0) {
-                    frameCounter = 0
-                    val now = System.currentTimeMillis()
-                    val delta = now - lastFpsTimestamp
-                    val fps = 1000 * frameCount.toFloat() / delta
-                    Log.d(TAG, "FPS: ${"%.02f".format(fps)}")
-                    lastFpsTimestamp = now
-                }
-            })
-            */
-
+            }
             // Create a new camera selector each time, enforcing lens facing
             val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
