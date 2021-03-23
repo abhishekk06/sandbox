@@ -445,6 +445,8 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             val approximateDistanceMeters = 2.0f
             // Performs a ray cast given a screen tap position.
             val results = frame.hitTestInstantPlacement(0F, 0F, approximateDistanceMeters)
+            val displayRotation = display!!.rotation
+            session.setDisplayGeometry(displayRotation, 256, 256)
             if (results.isNotEmpty()) {
                 val point = results[0].trackable as InstantPlacementPoint
                 // Create an Anchor from the point's pose.
