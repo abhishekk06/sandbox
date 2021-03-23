@@ -182,6 +182,8 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             Log.w("sessionUpdate", Thread.currentThread().name)
 
             surfaceView.queueEvent {
+                //session.setCameraTextureName(0)
+                session!!.setCameraTextureNames(intArrayOf(0))
                 val frame: Frame = session.update()
                 try {
                     frame.acquireCameraImage().use { image ->
@@ -382,6 +384,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     override fun onPause() {
         super.onPause()
         surfaceView.onPause()
+        GLES20.glGenTextures(1, IntArray(1), 0)
         session.pause()
         isFirstFrameAfterResume.set(true)
     }
@@ -423,6 +426,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onSurfaceCreated(p0: GL10?, p1: EGLConfig?) {
         GLES20.glClearColor(0.1f, 0.1f, 0.1f, 1.0f)
+
     }
 
     override fun onSurfaceChanged(p0: GL10?, p1: Int, p2: Int) {
@@ -431,7 +435,7 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onDrawFrame(p0: GL10?) {
         Log.w("sessionDraw", Thread.currentThread().name)
-
+        session!!.setCameraTextureNames(intArrayOf(0))
         val frame = session.update()
 
         // Place an object on tap.
@@ -458,4 +462,5 @@ class CameraActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         session.configure(config)
     }
 }
+
 
