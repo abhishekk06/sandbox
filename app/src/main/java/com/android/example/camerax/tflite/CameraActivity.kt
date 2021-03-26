@@ -23,7 +23,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.Matrix
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Build
@@ -156,7 +155,7 @@ class CameraActivity : AppCompatActivity() {
                 if (matches != null) {
                     object_name = matches[0]
                 }
-                mTTS.speak("Ok. Looking for "+object_name, TextToSpeech.QUEUE_ADD, null)
+                mTTS.speak("Ok. Looking for " + object_name, TextToSpeech.QUEUE_ADD, null)
                 JobStatus = JobType.SEARCHING_OBJECT
             }
 
@@ -169,7 +168,10 @@ class CameraActivity : AppCompatActivity() {
     private fun checkPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + packageName))
+                val intent = Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + packageName)
+                )
                 startActivity(intent)
                 finish()
                 Toast.makeText(this, "Enable Microphone Permission..!!", Toast.LENGTH_SHORT).show()
@@ -192,14 +194,40 @@ class CameraActivity : AppCompatActivity() {
         startSpeechToText()
         checkPermission()
 
+        when {
+            intent?.action == Intent.ACTION_SEND -> {
+                if ("text/plain" == intent.type) {
+                    handleSendText(intent) // Handle text being sent
+                } else {
+                    // No other handling supported
+                }
+            }
+        }
+
+        connect_team_viewer.setOnClickListener{
+            mTTS.speak(" Connecting to team viewer ", TextToSpeech.QUEUE_ADD, null)
+            Thread.sleep(1_500)
+            val launchIntent =
+                packageManager.getLaunchIntentForPackage("com.teamviewer.quicksupport.market")
+            if (launchIntent != null) {
+                startActivity(launchIntent)
+            } else {
+                Toast.makeText(
+                    this,
+                    "There is no package available in android",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+        
         // Listener for button used to capture photo
-        camera_capture_button.setOnClickListener {
+        start_scan.setOnClickListener {
 
             mTTS.speak("Hello! What object to search for ?", TextToSpeech.QUEUE_ADD, null)
-            Thread.sleep(1_500 )
+            Thread.sleep(1_500)
             speechRecognizer.startListening(speechRecognizerIntent)
             Thread.sleep(2_500)
-            speechRecognizer.stopListening()
+            //speechRecognizer.stopListening()
             // Re-enable camera controls
             it.isEnabled = true
             if (pauseAnalysis) {
@@ -244,6 +272,40 @@ class CameraActivity : AppCompatActivity() {
             val url_intent = Intent(Intent.ACTION_VIEW, uri)
             startActivity(url_intent)
             */
+        }
+    }
+
+    private fun handleSendText(intent: Intent?) {
+        val sharedText = intent!!.getStringExtra(Intent.EXTRA_TEXT)
+        if (sharedText != null) {
+            val i = Intent(Intent.ACTION_SEND)
+            i.type = "message/rfc822"
+            i.putExtra(Intent.EXTRA_EMAIL, arrayOf("azk6085@psu.edu"))
+            i.putExtra(Intent.EXTRA_SUBJECT, "Partner ID info")
+            i.putExtra(Intent.EXTRA_TEXT, sharedText)
+            try {
+                startActivity(Intent.createChooser(i, "Send mail..."))
+            } catch (ex: ActivityNotFoundException) {
+                Toast.makeText(
+                    this,
+                    "There are no email clients installed.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            Thread.sleep(10_500)
+            mTTS.speak(" Going back to team viewer ", TextToSpeech.QUEUE_ADD, null)
+            Thread.sleep(5_500)
+            val launchIntent =
+                packageManager.getLaunchIntentForPackage("com.teamviewer.quicksupport.market")
+            if (launchIntent != null) {
+                startActivity(launchIntent)
+            } else {
+                Toast.makeText(
+                    this,
+                    "There is no package available in android",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -338,7 +400,7 @@ class CameraActivity : AppCompatActivity() {
             Toast.makeText(this, "Not searching for any object", Toast.LENGTH_SHORT).show()
             return@post
         } else if(JobStatus == JobType.SEARCHING_OBJECT) {
-            Toast.makeText(this, "Looking for "+object_name, Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Looking for " + object_name, Toast.LENGTH_SHORT).show()
             //return@post
         }
 
@@ -355,10 +417,10 @@ class CameraActivity : AppCompatActivity() {
         if(prediction.label.toLowerCase() == object_name.toLowerCase()) {
             if (JobStatus ==  JobType.SEARCHING_OBJECT) {
                  mTTS.speak(
-                    object_name + "Found. Connecting person to help further",
-                    TextToSpeech.QUEUE_ADD,
-                    null
-                )
+                     object_name + "Found. Connecting person to help further",
+                     TextToSpeech.QUEUE_ADD,
+                     null
+                 )
                 Thread.sleep(1_500)
                 val uri: Uri =
                     Uri.parse("https://msngr.com/rtjydvbegvlc?funnel_session_id=_3b8d521f-af4c-4a57-896c-95cff5e1726d") // missing 'http://' will cause crashed

@@ -18,14 +18,16 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/camera_container"
-    android:background="@android:color/black"
+    android:background="@android:color/white"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
     <androidx.camera.view.PreviewView
         android:id="@+id/view_finder"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"/>
+        android:layout_height="match_parent"
+        tools:layout_editor_absoluteX="16dp"
+        tools:layout_editor_absoluteY="0dp" />
 
     <ImageView
         android:id="@+id/image_predicted"
@@ -56,16 +58,32 @@
 
     <!-- Camera control buttons -->
 
-    <ImageButton
-        android:id="@+id/camera_capture_button"
-        android:layout_width="@dimen/round_button_large"
-        android:layout_height="@dimen/round_button_large"
+    <Button
+        android:id="@+id/start_scan"
+        android:layout_width="130dp"
+        android:layout_height="50dp"
         android:layout_marginBottom="@dimen/shutter_button_margin"
         android:scaleType="fitCenter"
-        android:background="@drawable/ic_shutter"
+        android:background="#92a8d1"
+        android:layout_marginRight="250dp"
+        android:text="start_scan"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
-        android:contentDescription="@string/capture_button_alt" />
+        android:contentDescription="Start_scan" />
+
+    <Button
+        android:id="@+id/connect_team_viewer"
+        android:layout_width="130dp"
+        android:layout_height="50dp"
+        android:layout_marginBottom="@dimen/shutter_button_margin"
+        android:scaleType="fitCenter"
+        android:background="#92a8d1"
+        android:layout_marginLeft="250dp"
+        android:text="remote_access"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toRightOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        android:contentDescription="Connect_team_viewer" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
